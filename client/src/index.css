@@ -1,0 +1,104 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Base styles */
+html {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  @apply bg-gray-100 text-gray-900 antialiased;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Safe area padding for iOS */
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0);
+}
+
+.pt-safe {
+  padding-top: env(safe-area-inset-top, 0);
+}
+
+/* Leaflet map fixes */
+.leaflet-container {
+  height: 100%;
+  width: 100%;
+  z-index: 0;
+}
+
+.leaflet-popup-content {
+  margin: 8px 12px;
+}
+
+.leaflet-popup-content-wrapper {
+  border-radius: 8px;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-100;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-300 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-400;
+}
+
+/* Form focus states */
+input:focus,
+select:focus,
+textarea:focus {
+  @apply outline-none ring-2 ring-primary-500 border-primary-500;
+}
+
+/* Button active states for mobile */
+button:active {
+  transform: scale(0.98);
+}
+
+/* Loading spinner */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}
+
+/* Custom marker styles */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+.current-location-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* PWA install prompt styles */
+.pwa-install-prompt {
+  @apply fixed bottom-20 left-4 right-4 bg-white rounded-lg shadow-lg p-4 z-50;
+}
+
+/* Offline indicator */
+.offline-indicator {
+  @apply fixed top-0 left-0 right-0 bg-orange-500 text-white text-center py-1 text-sm z-50;
+}
+
+/* Pull to refresh indicator */
+.pull-to-refresh {
+  @apply flex items-center justify-center py-4 text-gray-500;
+}

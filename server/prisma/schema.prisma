@@ -1,0 +1,185 @@
+// eGoli-Link Database Schema
+// Field Dispatch System for City Power Johannesburg
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [postgis]
+}
+
+model User {
+  id           String   @id @default(uuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  role         UserRole @default(TECHNICIAN)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedJobs Job[] @relation("AssignedTechnician")
+  createdJobs  Job[] @relation("CreatedBy")
+
+  @@map("users")
+}
+
+model Location {
+  id                String   @id @default(uuid())
+  standNo           String
+  township          String
+  address           String // Street address from PDF
+  normalizedAddress String? // Cleaned for geocoding
+  lat               Float?
+  lng               Float?
+  geocoded          Boolean  @default(false)
+  geocodeFailed     Boolean  @default(false) // Flag for manual entry
+  geocodeSource     String? // "nominatim" | "google" | "manual"
+  geocodeAttempts   Int      @default(0)
+  lastGeocodeError  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  jobs Job[]
+
+  @@unique([standNo, township])
+  @@index([township])
+  @@index([geocoded])
+  @@index([geocodeFailed])
+  @@map("locations")
+}
+
+model Job {
+  id         String      @id @default(uuid())
+  locationId String
+  location   Location    @relation(fields: [locationId], references: [id])
+  status     JobStatus   @default(PENDING)
+  priority   JobPriority @default(NORMAL)
+
+  title         String // e.g., "TRFR 15 - Fault"
+  description   String?
+  equipmentType String? // e.g., "250kVA Transformer"
+  equipmentId   String? // e.g., "TRFR 15"
+
+  assignedToId String?
+  assignedTo   User?   @relation("AssignedTechnician", fields: [assignedToId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  pdfSourceId String?
+  pdfSource   PDFUpload? @relation(fields: [pdfSourceId], references: [id])
+
+  scheduledFor DateTime?
+  startedAt    DateTime?
+  completedAt  DateTime?
+
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  photos        Photo[]
+  statusHistory JobStatusHistory[]
+
+  @@index([status])
+  @@index([assignedToId])
+  @@index([scheduledFor])
+  @@index([priority])
+  @@map("jobs")
+}
+
+model Photo {
+  id     String @id @default(uuid())
+  jobId  String
+  job    Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  filename String
+  url      String
+  mimeType String
+  size     Int
+
+  caption String?
+  takenAt DateTime @default(now())
+
+  @@index([jobId])
+  @@map("photos")
+}
+
+model PDFUpload {
+  id           String @id @default(uuid())
+  filename     String
+  originalName String
+  url          String
+  size         Int
+
+  substationName String? // Extracted from PDF
+  drawingNumber  String? // e.g., "14538"
+
+  extractionStatus ExtractionStatus @default(PENDING)
+  extractedCount   Int              @default(0) // Number of locations extracted
+  errorMessage     String?
+
+  uploadedById String
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  jobs Job[]
+
+  @@index([extractionStatus])
+  @@map("pdf_uploads")
+}
+
+model JobStatusHistory {
+  id    String @id @default(uuid())
+  jobId String
+  job   Job    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  fromStatus  JobStatus?
+  toStatus    JobStatus
+  changedById String?
+
+  lat Float? // Location when status changed
+  lng Float?
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([jobId])
+  @@index([createdAt])
+  @@map("job_status_history")
+}
+
+enum UserRole {
+  ADMIN
+  SUPERVISOR
+  TECHNICIAN
+}
+
+enum JobStatus {
+  PENDING
+  ASSIGNED
+  EN_ROUTE
+  ON_SITE
+  COMPLETED
+  CANCELLED
+}
+
+enum JobPriority {
+  URGENT
+  HIGH
+  NORMAL
+  LOW
+}
+
+enum ExtractionStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+}
