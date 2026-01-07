@@ -12,6 +12,7 @@ import authRoutes from './routes/auth.js';
 import jobRoutes from './routes/jobs.js';
 import locationRoutes from './routes/locations.js';
 import pdfRoutes from './routes/pdf.js';
+import userRoutes from './routes/users.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -59,6 +60,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/locations', locationRoutes);
 app.use('/api/pdf', pdfRoutes);
+app.use('/api/users', userRoutes);
 
 // Error handling
 app.use(notFoundHandler);

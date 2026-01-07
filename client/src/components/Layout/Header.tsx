@@ -11,7 +11,7 @@ interface HeaderProps {
 
 export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) {
   const { isOnline, isSyncing, pendingCount, sync } = useOfflineSync();
-  const { canUploadPDF, logout } = useAuth();
+  const { canUploadPDF, isAdmin, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
 
   return (
@@ -120,6 +120,15 @@ export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) 
                 onClick={() => setShowMenu(false)}
               >
                 PDF Management
+              </Link>
+            )}
+            {isAdmin && (
+              <Link
+                to="/users"
+                className="block px-4 py-2 hover:bg-gray-100"
+                onClick={() => setShowMenu(false)}
+              >
+                User Management
               </Link>
             )}
             <hr className="my-2" />

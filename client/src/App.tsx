@@ -9,6 +9,7 @@ import { JobDetailView } from './components/JobDetail/JobDetailView';
 import { MapView } from './components/Map/MapView';
 import { UploadZone } from './components/PDFUpload/UploadZone';
 import { PDFManagement } from './components/PDFUpload/PDFManagement';
+import { UserManagement } from './components/UserManagement/UserManagement';
 import { getAccessToken, authApi } from './services/api';
 import { initDB } from './services/offlineStorage';
 import { AuthProvider, useAuth } from './hooks/useAuth';
@@ -183,6 +184,25 @@ function UploadPage() {
   );
 }
 
+// Users Page (Admin only)
+function UsersPage() {
+  const { isAdmin } = useAuth();
+
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-100 pb-20">
+      <Header title="User Management" />
+      <div className="p-4">
+        <UserManagement />
+      </div>
+      <BottomNav />
+    </div>
+  );
+}
+
 // Protected Route wrapper
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const token = getAccessToken();
@@ -256,6 +276,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <UploadPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/users"
+              element={
+                <ProtectedRoute>
+                  <UsersPage />
                 </ProtectedRoute>
               }
             />

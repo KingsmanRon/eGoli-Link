@@ -267,4 +267,51 @@ export const pdfApi = {
   },
 };
 
+// Users API
+export const usersApi = {
+  list: async (params?: {
+    page?: number;
+    limit?: number;
+    role?: string;
+    isActive?: boolean;
+    search?: string;
+  }): Promise<PaginatedResponse<User & { _count?: { assignedJobs: number; createdJobs: number } }>> => {
+    const response = await api.get<PaginatedResponse<User & { _count?: { assignedJobs: number; createdJobs: number } }>>('/users', { params });
+    return response.data;
+  },
+
+  getById: async (id: string): Promise<User> => {
+    const response = await api.get<ApiResponse<User>>(`/users/${id}`);
+    return response.data.data;
+  },
+
+  create: async (data: {
+    email: string;
+    password: string;
+    name: string;
+    role: UserRole;
+  }): Promise<User> => {
+    const response = await api.post<ApiResponse<User>>('/users', data);
+    return response.data.data;
+  },
+
+  update: async (id: string, data: {
+    name?: string;
+    role?: UserRole;
+    isActive?: boolean;
+  }): Promise<User> => {
+    const response = await api.patch<ApiResponse<User>>(`/users/${id}`, data);
+    return response.data.data;
+  },
+
+  resetPassword: async (id: string, newPassword: string): Promise<void> => {
+    await api.post(`/users/${id}/reset-password`, { newPassword });
+  },
+
+  getTechnicians: async (): Promise<Array<{ id: string; email: string; name: string; activeJobs: number }>> => {
+    const response = await api.get<ApiResponse<Array<{ id: string; email: string; name: string; activeJobs: number }>>>('/users/technicians');
+    return response.data.data;
+  },
+};
+
 export default api;
