@@ -10,6 +10,7 @@ import { MapView } from './components/Map/MapView';
 import { UploadZone } from './components/PDFUpload/UploadZone';
 import { PDFManagement } from './components/PDFUpload/PDFManagement';
 import { UserManagement } from './components/UserManagement/UserManagement';
+import { SettingsPage } from './components/Settings/SettingsPage';
 import { getAccessToken, authApi } from './services/api';
 import { initDB } from './services/offlineStorage';
 import { AuthProvider, useAuth } from './hooks/useAuth';
@@ -284,6 +285,14 @@ function App() {
               element={
                 <ProtectedRoute>
                   <UsersPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/settings"
+              element={
+                <ProtectedRoute>
+                  <SettingsPage />
                 </ProtectedRoute>
               }
             />
