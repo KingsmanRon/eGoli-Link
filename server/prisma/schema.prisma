@@ -44,7 +44,8 @@ model Location {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
 
-  jobs Job[]
+  jobs       Job[]
+  pdfSources PDFLocation[]
 
   @@unique([standNo, township])
   @@index([township])
@@ -129,10 +130,25 @@ model PDFUpload {
   createdAt   DateTime  @default(now())
   processedAt DateTime?
 
-  jobs Job[]
+  jobs              Job[]
+  extractedLocations PDFLocation[]
 
   @@index([extractionStatus])
   @@map("pdf_uploads")
+}
+
+model PDFLocation {
+  id         String    @id @default(uuid())
+  pdfId      String
+  pdf        PDFUpload @relation(fields: [pdfId], references: [id], onDelete: Cascade)
+  locationId String
+  location   Location  @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  createdAt  DateTime  @default(now())
+
+  @@unique([pdfId, locationId])
+  @@index([pdfId])
+  @@index([locationId])
+  @@map("pdf_locations")
 }
 
 model JobStatusHistory {

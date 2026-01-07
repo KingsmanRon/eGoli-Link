@@ -105,6 +105,21 @@ async function processUploadedPDF(pdfId: string, buffer: Buffer) {
 
         locationIds.push(location.id);
         extractedCount++;
+
+        // Create PDF-Location relationship
+        await prisma.pDFLocation.upsert({
+          where: {
+            pdfId_locationId: {
+              pdfId,
+              locationId: location.id,
+            },
+          },
+          create: {
+            pdfId,
+            locationId: location.id,
+          },
+          update: {},
+        });
       } catch (err) {
         logger.warn({ error: err, location: loc }, 'Failed to upsert location');
       }
@@ -190,35 +205,40 @@ export async function getPDFLocations(req: Request, res: Response, next: NextFun
   try {
     const { id } = req.params;
 
-    // Verify PDF exists
+    // Verify PDF exists and get extracted locations
     const pdf = await prisma.pDFUpload.findUnique({
       where: { id },
+      include: {
+        extractedLocations: {
+          include: {
+            location: true,
+          },
+        },
+      },
     });
 
     if (!pdf) {
       throw new NotFoundError('PDF upload');
     }
 
-    // Get jobs from this PDF with their locations
-    const jobs = await prisma.job.findMany({
-      where: { pdfSourceId: id },
-      include: {
-        location: true,
+    // Get job counts for each location
+    const locationIds = pdf.extractedLocations.map((el) => el.locationId);
+    const jobCounts = await prisma.job.groupBy({
+      by: ['locationId'],
+      where: {
+        locationId: { in: locationIds },
+        pdfSourceId: id,
       },
+      _count: true,
     });
 
-    // Get unique locations
-    const locationMap = new Map();
-    for (const job of jobs) {
-      if (!locationMap.has(job.location.id)) {
-        locationMap.set(job.location.id, {
-          ...job.location,
-          jobCount: 1,
-        });
-      } else {
-        locationMap.get(job.location.id).jobCount++;
-      }
-    }
+    const jobCountMap = new Map(jobCounts.map((jc) => [jc.locationId, jc._count]));
+
+    // Build locations with job counts
+    const locations = pdf.extractedLocations.map((el) => ({
+      ...el.location,
+      jobCount: jobCountMap.get(el.locationId) || 0,
+    }));
 
     res.json({
       success: true,
@@ -229,7 +249,7 @@ export async function getPDFLocations(req: Request, res: Response, next: NextFun
           substationName: pdf.substationName,
           drawingNumber: pdf.drawingNumber,
         },
-        locations: Array.from(locationMap.values()),
+        locations,
       },
     });
   } catch (error) {

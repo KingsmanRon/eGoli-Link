@@ -8,6 +8,7 @@ import { JobList } from './components/DispatchQueue/JobList';
 import { JobDetailView } from './components/JobDetail/JobDetailView';
 import { MapView } from './components/Map/MapView';
 import { UploadZone } from './components/PDFUpload/UploadZone';
+import { PDFManagement } from './components/PDFUpload/PDFManagement';
 import { getAccessToken, authApi } from './services/api';
 import { initDB } from './services/offlineStorage';
 import { AuthProvider, useAuth } from './hooks/useAuth';
@@ -139,24 +140,42 @@ function MapPage() {
 // Upload Page (Admin/Supervisor only)
 function UploadPage() {
   const { canUploadPDF } = useAuth();
+  const [refreshKey, setRefreshKey] = useState(0);
 
   if (!canUploadPDF) {
     return <Navigate to="/" replace />;
   }
 
+  const handleUploadComplete = () => {
+    // Refresh the PDF management list after upload
+    setRefreshKey((k) => k + 1);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100 pb-20">
-      <Header title="Upload PDF" />
-      <div className="p-4">
-        <UploadZone />
-        <div className="mt-6 bg-white rounded-lg p-4">
+      <Header title="PDF Management" />
+      <div className="p-4 space-y-6">
+        {/* Upload Zone */}
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Upload New PDF</h2>
+          <UploadZone onUploadComplete={handleUploadComplete} />
+        </div>
+
+        {/* Instructions */}
+        <div className="bg-white rounded-lg p-4">
           <h3 className="font-semibold text-gray-900 mb-2">Instructions</h3>
           <ul className="text-sm text-gray-600 space-y-2">
             <li>• Upload City Power operational diagrams (PDF format)</li>
             <li>• System extracts MSS, HVC, and Load Centre schedule tables</li>
             <li>• Locations are automatically geocoded for map display</li>
-            <li>• Create jobs from extracted locations</li>
+            <li>• Click on a PDF below to view locations and create jobs</li>
           </ul>
+        </div>
+
+        {/* PDF Management */}
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900 mb-3">Manage Uploaded PDFs</h2>
+          <PDFManagement key={refreshKey} />
         </div>
       </div>
       <BottomNav />

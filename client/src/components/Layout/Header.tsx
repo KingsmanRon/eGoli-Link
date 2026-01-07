@@ -119,7 +119,7 @@ export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) 
                 className="block px-4 py-2 hover:bg-gray-100"
                 onClick={() => setShowMenu(false)}
               >
-                Upload PDF
+                PDF Management
               </Link>
             )}
             <hr className="my-2" />
