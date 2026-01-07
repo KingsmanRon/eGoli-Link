@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useJob, useUpdateJobStatus, useUploadPhoto } from '../../hooks/useJobs';
 import { useCurrentPosition } from '../../hooks/useGeolocation';
 import { useOfflineSync } from '../../hooks/useOfflineSync';
+import { useAuth } from '../../hooks/useAuth';
 import {
   getStatusColor,
   getStatusLabel,
@@ -13,6 +14,7 @@ import {
 import { openWazeNavigation, openGoogleMapsNavigation } from '../../services/wazeNavigation';
 import { Header } from '../Layout/Header';
 import { PhotoCapture } from '../JobCompletion/PhotoCapture';
+import { AssignTechnicianModal } from './AssignTechnicianModal';
 import type { JobStatus } from '../../types';
 
 const STATUS_FLOW: JobStatus[] = ['ASSIGNED', 'EN_ROUTE', 'ON_SITE', 'COMPLETED'];
@@ -20,12 +22,14 @@ const STATUS_FLOW: JobStatus[] = ['ASSIGNED', 'EN_ROUTE', 'ON_SITE', 'COMPLETED'
 export function JobDetailView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { data: job, isLoading, error } = useJob(id);
+  const { data: job, isLoading, error, refetch } = useJob(id);
   const updateStatus = useUpdateJobStatus();
   const uploadPhoto = useUploadPhoto();
   const { getCurrentPosition } = useCurrentPosition();
   const { isOnline, queueStatusUpdate, queuePhotoUpload } = useOfflineSync();
+  const { canManageJobs } = useAuth();
   const [showPhotoCapture, setShowPhotoCapture] = useState(false);
+  const [showAssignModal, setShowAssignModal] = useState(false);
   const [statusNote, setStatusNote] = useState('');
 
   if (isLoading) {
@@ -156,6 +160,38 @@ export function JobDetailView() {
         </div>
       </div>
 
+      {/* Assignment Info */}
+      <div className="bg-white border-b border-gray-200 p-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-900">Assignment</h2>
+          {canManageJobs && job.status !== 'COMPLETED' && job.status !== 'CANCELLED' && (
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="text-sm text-primary-600 font-medium hover:text-primary-800"
+            >
+              {job.assignedTo ? 'Reassign' : 'Assign'}
+            </button>
+          )}
+        </div>
+        <div className="mt-2">
+          {job.assignedTo ? (
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-primary-100 rounded-full flex items-center justify-center">
+                <span className="text-primary-700 font-medium">
+                  {job.assignedTo.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              <div>
+                <p className="font-medium text-gray-900">{job.assignedTo.name}</p>
+                <p className="text-sm text-gray-500">{job.assignedTo.email}</p>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-500">Not assigned yet</p>
+          )}
+        </div>
+      </div>
+
       {/* Equipment Info */}
       {(job.equipmentId || job.equipmentType) && (
         <div className="bg-white border-b border-gray-200 p-4">
@@ -252,6 +288,20 @@ export function JobDetailView() {
             />
           </div>
         </div>
+      )}
+
+      {/* Assign Technician Modal */}
+      {showAssignModal && (
+        <AssignTechnicianModal
+          jobId={job.id}
+          jobTitle={job.title}
+          currentAssignee={job.assignedTo ? { id: job.assignedTo.id, name: job.assignedTo.name } : null}
+          onClose={() => setShowAssignModal(false)}
+          onAssigned={() => {
+            setShowAssignModal(false);
+            refetch();
+          }}
+        />
       )}
     </div>
   );
