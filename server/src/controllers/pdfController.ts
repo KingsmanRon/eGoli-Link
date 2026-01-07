@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { prisma, ExtractionStatus } from '../models/index.js';
 import { extractFromBuffer, validateExtractionResult } from '../services/pdfExtractor.js';
-import { storage } from '../services/fileStorage.js';
+import { storage, getFileBuffer } from '../services/fileStorage.js';
 import { processGeocodeQueue } from '../services/geocodeQueue.js';
 import { BadRequestError, NotFoundError } from '../middleware/errorHandler.js';
 import { logger } from '../utils/logger.js';
@@ -383,5 +383,163 @@ export async function retryGeocoding(req: Request, res: Response, next: NextFunc
     });
   } catch (error) {
     next(error);
+  }
+}
+
+/**
+ * Reprocess a failed PDF (useful for retrying with OCR)
+ */
+export async function reprocessPDF(req: Request, res: Response, next: NextFunction) {
+  try {
+    const { id } = req.params;
+
+    // Get PDF record
+    const pdf = await prisma.pDFUpload.findUnique({
+      where: { id },
+    });
+
+    if (!pdf) {
+      throw new NotFoundError('PDF upload');
+    }
+
+    // Get file buffer from storage
+    let buffer: Buffer;
+    try {
+      buffer = await getFileBuffer(pdf.filename);
+    } catch (err) {
+      throw new BadRequestError('PDF file not found in storage');
+    }
+
+    // Mark as processing
+    await prisma.pDFUpload.update({
+      where: { id },
+      data: {
+        extractionStatus: ExtractionStatus.PROCESSING,
+        errorMessage: null,
+      },
+    });
+
+    logger.info({ pdfId: id, filename: pdf.originalName }, 'PDF reprocessing started');
+
+    // Process PDF asynchronously
+    processUploadedPDFReprocess(id, buffer).catch((err) => {
+      logger.error({ error: err, pdfId: id }, 'PDF reprocessing failed');
+    });
+
+    res.status(202).json({
+      success: true,
+      data: {
+        id: pdf.id,
+        filename: pdf.originalName,
+        status: 'PROCESSING',
+        message: 'PDF reprocessing started (with OCR support)',
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * Process PDF for reprocessing (runs in background)
+ */
+async function processUploadedPDFReprocess(pdfId: string, buffer: Buffer) {
+  try {
+    // Extract data from PDF (now with OCR support)
+    const result = await extractFromBuffer(buffer);
+
+    // Validate extraction
+    const validation = validateExtractionResult(result);
+
+    if (result.locations.length === 0) {
+      await prisma.pDFUpload.update({
+        where: { id: pdfId },
+        data: {
+          extractionStatus: ExtractionStatus.FAILED,
+          errorMessage: result.errors.join('; ') || 'No locations extracted',
+          processedAt: new Date(),
+        },
+      });
+      return;
+    }
+
+    // Create or update locations
+    let extractedCount = 0;
+
+    for (const loc of result.locations) {
+      try {
+        const location = await prisma.location.upsert({
+          where: {
+            standNo_township: {
+              standNo: loc.standNo,
+              township: loc.township,
+            },
+          },
+          create: {
+            standNo: loc.standNo,
+            township: loc.township,
+            address: loc.address,
+          },
+          update: {
+            address: loc.address.length > 10 ? loc.address : undefined,
+          },
+        });
+
+        extractedCount++;
+
+        // Create PDF-Location relationship
+        await prisma.pDFLocation.upsert({
+          where: {
+            pdfId_locationId: {
+              pdfId,
+              locationId: location.id,
+            },
+          },
+          create: {
+            pdfId,
+            locationId: location.id,
+          },
+          update: {},
+        });
+      } catch (err) {
+        logger.warn({ error: err, location: loc }, 'Failed to upsert location during reprocess');
+      }
+    }
+
+    // Update PDF record
+    await prisma.pDFUpload.update({
+      where: { id: pdfId },
+      data: {
+        substationName: result.substationName,
+        drawingNumber: result.drawingNumber,
+        extractionStatus: ExtractionStatus.COMPLETED,
+        extractedCount,
+        errorMessage: validation.issues.length > 0 ? validation.issues.join('; ') : null,
+        processedAt: new Date(),
+      },
+    });
+
+    logger.info(
+      { pdfId, extractedCount, substationName: result.substationName },
+      'PDF reprocessing completed'
+    );
+
+    // Trigger geocoding for new locations
+    if (extractedCount > 0) {
+      processGeocodeQueue({ limit: extractedCount }).catch((err) => {
+        logger.error({ error: err }, 'Geocode queue processing failed');
+      });
+    }
+  } catch (error) {
+    logger.error({ error, pdfId }, 'PDF reprocessing error');
+
+    await prisma.pDFUpload.update({
+      where: { id: pdfId },
+      data: {
+        extractionStatus: ExtractionStatus.FAILED,
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        processedAt: new Date(),
+      },
+    });
   }
 }

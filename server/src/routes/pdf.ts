@@ -7,6 +7,7 @@ import {
   listPDFs,
   createJobsFromPDF,
   retryGeocoding,
+  reprocessPDF,
 } from '../controllers/pdfController.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 
@@ -36,6 +37,7 @@ router.post('/upload', authorize('ADMIN', 'SUPERVISOR'), upload.single('pdf'), u
 router.get('/:id/status', getPDFStatus);
 router.get('/:id/locations', getPDFLocations);
 router.post('/:id/create-jobs', authorize('ADMIN', 'SUPERVISOR'), createJobsFromPDF);
+router.post('/:id/reprocess', authorize('ADMIN', 'SUPERVISOR'), reprocessPDF);
 
 // Geocoding operations
 router.post('/geocode/retry', authorize('ADMIN', 'SUPERVISOR'), retryGeocoding);

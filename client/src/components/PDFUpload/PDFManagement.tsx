@@ -9,6 +9,7 @@ export function PDFManagement() {
   const [selectedPdf, setSelectedPdf] = useState<PDFUpload | null>(null);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
+  const [reprocessingId, setReprocessingId] = useState<string | null>(null);
 
   const fetchPdfs = async () => {
     try {
@@ -25,6 +26,35 @@ export function PDFManagement() {
   useEffect(() => {
     fetchPdfs();
   }, [page]);
+
+  const handleReprocess = async (e: React.MouseEvent, pdfId: string) => {
+    e.stopPropagation();
+    setReprocessingId(pdfId);
+    try {
+      await pdfApi.reprocess(pdfId);
+      // Update local state to show processing
+      setPdfs((prev) =>
+        prev.map((pdf) =>
+          pdf.id === pdfId ? { ...pdf, extractionStatus: 'PROCESSING' as ExtractionStatus, errorMessage: null } : pdf
+        )
+      );
+      // Poll for status updates
+      const pollStatus = async () => {
+        const status = await pdfApi.getStatus(pdfId);
+        setPdfs((prev) =>
+          prev.map((pdf) => (pdf.id === pdfId ? { ...pdf, ...status } : pdf))
+        );
+        if (status.extractionStatus === 'PROCESSING') {
+          setTimeout(pollStatus, 2000);
+        }
+      };
+      setTimeout(pollStatus, 2000);
+    } catch (error) {
+      console.error('Failed to reprocess PDF:', error);
+    } finally {
+      setReprocessingId(null);
+    }
+  };
 
   const getStatusBadge = (status: ExtractionStatus) => {
     const styles: Record<ExtractionStatus, string> = {
@@ -144,7 +174,32 @@ export function PDFManagement() {
                     </div>
                   </div>
 
-                  <div className="ml-4 flex-shrink-0">
+                  <div className="ml-4 flex-shrink-0 flex items-center gap-2">
+                    {pdf.extractionStatus === 'FAILED' && (
+                      <button
+                        onClick={(e) => handleReprocess(e, pdf.id)}
+                        disabled={reprocessingId === pdf.id}
+                        className="px-3 py-1 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
+                        title="Retry with OCR"
+                      >
+                        {reprocessingId === pdf.id ? (
+                          <>
+                            <svg className="animate-spin h-4 w-4" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path>
+                            </svg>
+                            <span>Reprocessing...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span>Retry OCR</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                     <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                     </svg>

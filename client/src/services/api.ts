@@ -265,6 +265,11 @@ export const pdfApi = {
     const response = await api.post<ApiResponse<{ processed: number; recovered: number }>>('/pdf/geocode/retry');
     return response.data.data;
   },
+
+  reprocess: async (id: string): Promise<{ id: string; status: string; message: string }> => {
+    const response = await api.post<ApiResponse<{ id: string; status: string; message: string }>>(`/pdf/${id}/reprocess`);
+    return response.data.data;
+  },
 };
 
 // Users API

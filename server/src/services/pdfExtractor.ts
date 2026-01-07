@@ -1,7 +1,14 @@
 import pdf from 'pdf-parse';
 import { readFile } from 'fs/promises';
+import { createCanvas } from 'canvas';
+import * as pdfjs from 'pdfjs-dist';
+import Tesseract from 'tesseract.js';
 import { logger } from '../utils/logger.js';
 import { extractStandNo, formatTownship } from '../utils/addressNormalizer.js';
+
+// Set up pdfjs worker
+const pdfjsPath = require.resolve('pdfjs-dist');
+pdfjs.GlobalWorkerOptions.workerSrc = pdfjsPath.replace('pdfjs-dist/build/pdf.mjs', 'pdfjs-dist/build/pdf.worker.mjs');
 
 export interface ExtractedLocation {
   standNo: string;
@@ -238,6 +245,60 @@ function extractTablesFromText(text: string): ExtractedLocation[] {
 }
 
 /**
+ * Extract text from image-based PDF using OCR
+ */
+async function extractTextWithOCR(buffer: Buffer): Promise<string> {
+  try {
+    logger.info('Starting OCR extraction for image-based PDF');
+
+    // Load PDF document
+    const loadingTask = pdfjs.getDocument({ data: buffer });
+    const pdfDocument = await loadingTask.promise;
+    const numPages = pdfDocument.numPages;
+
+    logger.info({ numPages }, 'PDF loaded for OCR');
+
+    let fullText = '';
+
+    // Process each page
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+
+      // Create canvas for rendering
+      const canvas = createCanvas(viewport.width, viewport.height);
+      const context = canvas.getContext('2d');
+
+      // Render PDF page to canvas
+      await page.render({
+        canvasContext: context as unknown as CanvasRenderingContext2D,
+        viewport: viewport,
+      }).promise;
+
+      // Convert canvas to PNG buffer
+      const imageBuffer = canvas.toBuffer('image/png');
+
+      // Run OCR on the image
+      const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            logger.debug({ page: pageNum, progress: m.progress }, 'OCR progress');
+          }
+        },
+      });
+
+      fullText += text + '\n';
+      logger.info({ pageNum, textLength: text.length }, 'OCR completed for page');
+    }
+
+    return fullText;
+  } catch (error) {
+    logger.error({ error }, 'OCR extraction failed');
+    throw error;
+  }
+}
+
+/**
  * Main PDF extraction function
  */
 export async function extractFromPDF(filePath: string): Promise<ExtractionResult> {
@@ -250,18 +311,36 @@ export async function extractFromPDF(filePath: string): Promise<ExtractionResult
     // Parse PDF
     const pdfData = await pdf(dataBuffer);
 
-    if (!pdfData.text || pdfData.text.trim().length === 0) {
-      errors.push('PDF appears to be image-based or empty. OCR may be required.');
-      return {
-        substationName: 'Unknown',
-        drawingNumber: '',
-        locations: [],
-        errors,
-        rawText: '',
-      };
-    }
+    let text = pdfData.text;
 
-    const text = pdfData.text;
+    // If no text found, try OCR
+    if (!text || text.trim().length === 0) {
+      logger.info('No text found in PDF, attempting OCR extraction');
+      try {
+        text = await extractTextWithOCR(dataBuffer);
+        if (!text || text.trim().length === 0) {
+          errors.push('PDF appears to be empty. OCR could not extract any text.');
+          return {
+            substationName: 'Unknown',
+            drawingNumber: '',
+            locations: [],
+            errors,
+            rawText: '',
+          };
+        }
+        logger.info({ textLength: text.length }, 'OCR extraction successful');
+      } catch (ocrError) {
+        const ocrErrorMessage = ocrError instanceof Error ? ocrError.message : 'Unknown OCR error';
+        errors.push(`OCR extraction failed: ${ocrErrorMessage}`);
+        return {
+          substationName: 'Unknown',
+          drawingNumber: '',
+          locations: [],
+          errors,
+          rawText: '',
+        };
+      }
+    }
 
     // Extract metadata
     const substationName = extractSubstationName(text);
@@ -314,17 +393,34 @@ export async function extractFromBuffer(buffer: Buffer): Promise<ExtractionResul
   try {
     const pdfData = await pdf(buffer);
 
-    if (!pdfData.text || pdfData.text.trim().length === 0) {
-      errors.push('PDF appears to be image-based or empty.');
-      return {
-        substationName: 'Unknown',
-        drawingNumber: '',
-        locations: [],
-        errors,
-      };
-    }
+    let text = pdfData.text;
 
-    const text = pdfData.text;
+    // If no text found, try OCR
+    if (!text || text.trim().length === 0) {
+      logger.info('No text found in PDF buffer, attempting OCR extraction');
+      try {
+        text = await extractTextWithOCR(buffer);
+        if (!text || text.trim().length === 0) {
+          errors.push('PDF appears to be empty. OCR could not extract any text.');
+          return {
+            substationName: 'Unknown',
+            drawingNumber: '',
+            locations: [],
+            errors,
+          };
+        }
+        logger.info({ textLength: text.length }, 'OCR extraction successful');
+      } catch (ocrError) {
+        const ocrErrorMessage = ocrError instanceof Error ? ocrError.message : 'Unknown OCR error';
+        errors.push(`OCR extraction failed: ${ocrErrorMessage}`);
+        return {
+          substationName: 'Unknown',
+          drawingNumber: '',
+          locations: [],
+          errors,
+        };
+      }
+    }
     const substationName = extractSubstationName(text);
     const drawingNumber = extractDrawingNumber(text);
     const locations = extractTablesFromText(text);
