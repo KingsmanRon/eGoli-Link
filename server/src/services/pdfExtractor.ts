@@ -1,14 +1,12 @@
 import pdf from 'pdf-parse';
-import { readFile } from 'fs/promises';
-import { createCanvas } from 'canvas';
-import * as pdfjs from 'pdfjs-dist';
+import { readFile, writeFile, unlink, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
+import { v4 as uuidv4 } from 'uuid';
+import puppeteer from 'puppeteer';
 import Tesseract from 'tesseract.js';
 import { logger } from '../utils/logger.js';
 import { extractStandNo, formatTownship } from '../utils/addressNormalizer.js';
-
-// Set up pdfjs worker
-const pdfjsPath = require.resolve('pdfjs-dist');
-pdfjs.GlobalWorkerOptions.workerSrc = pdfjsPath.replace('pdfjs-dist/build/pdf.mjs', 'pdfjs-dist/build/pdf.worker.mjs');
 
 export interface ExtractedLocation {
   standNo: string;
@@ -246,47 +244,82 @@ function extractTablesFromText(text: string): ExtractedLocation[] {
 
 /**
  * Extract text from image-based PDF using OCR
+ * Uses Puppeteer to render PDF pages to images, then Tesseract for OCR
  */
 async function extractTextWithOCR(buffer: Buffer): Promise<string> {
+  const tempDir = join(tmpdir(), `pdf-ocr-${uuidv4()}`);
+  const pdfPath = join(tempDir, 'input.pdf');
+  let browser: puppeteer.Browser | null = null;
+
   try {
     logger.info('Starting OCR extraction for image-based PDF');
 
-    // Load PDF document
-    const loadingTask = pdfjs.getDocument({ data: buffer });
-    const pdfDocument = await loadingTask.promise;
-    const numPages = pdfDocument.numPages;
+    // Create temp directory and save PDF
+    await mkdir(tempDir, { recursive: true });
+    await writeFile(pdfPath, buffer);
+
+    // Launch puppeteer
+    browser = await puppeteer.launch({
+      headless: true,
+      args: ['--no-sandbox', '--disable-setuid-sandbox'],
+    });
+
+    const page = await browser.newPage();
+
+    // Load PDF in browser
+    const pdfBase64 = buffer.toString('base64');
+    const pdfDataUrl = `data:application/pdf;base64,${pdfBase64}`;
+
+    // Use PDF.js viewer in browser to render pages
+    await page.setContent(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+        <script>
+          pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        </script>
+      </head>
+      <body>
+        <canvas id="pdf-canvas"></canvas>
+        <script>
+          window.renderPage = async function(pageNum) {
+            const pdf = await pdfjsLib.getDocument('${pdfDataUrl}').promise;
+            const page = await pdf.getPage(pageNum);
+            const scale = 2.0;
+            const viewport = page.getViewport({ scale });
+            const canvas = document.getElementById('pdf-canvas');
+            const context = canvas.getContext('2d');
+            canvas.width = viewport.width;
+            canvas.height = viewport.height;
+            await page.render({ canvasContext: context, viewport: viewport }).promise;
+            return { numPages: pdf.numPages, dataUrl: canvas.toDataURL('image/png') };
+          };
+        </script>
+      </body>
+      </html>
+    `, { waitUntil: 'networkidle0' });
+
+    // Get number of pages and process each
+    const firstResult = await page.evaluate(() => (window as any).renderPage(1)) as { numPages: number; dataUrl: string };
+    const numPages = firstResult.numPages;
 
     logger.info({ numPages }, 'PDF loaded for OCR');
 
     let fullText = '';
 
-    // Process each page
-    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-      const page = await pdfDocument.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 2.0 }); // Higher scale for better OCR
+    // Process first page
+    const firstImageBuffer = Buffer.from(firstResult.dataUrl.split(',')[1], 'base64');
+    const { data: { text: firstText } } = await Tesseract.recognize(firstImageBuffer, 'eng');
+    fullText += firstText + '\n';
+    logger.info({ pageNum: 1, textLength: firstText.length }, 'OCR completed for page');
 
-      // Create canvas for rendering
-      const canvas = createCanvas(viewport.width, viewport.height);
-      const context = canvas.getContext('2d');
+    // Process remaining pages
+    for (let pageNum = 2; pageNum <= numPages; pageNum++) {
+      const result = await page.evaluate((num) => (window as any).renderPage(num), pageNum) as { dataUrl: string };
+      const imageBuffer = Buffer.from(result.dataUrl.split(',')[1], 'base64');
 
-      // Render PDF page to canvas
-      await page.render({
-        canvasContext: context as unknown as CanvasRenderingContext2D,
-        viewport: viewport,
-      }).promise;
-
-      // Convert canvas to PNG buffer
-      const imageBuffer = canvas.toBuffer('image/png');
-
-      // Run OCR on the image
-      const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text') {
-            logger.debug({ page: pageNum, progress: m.progress }, 'OCR progress');
-          }
-        },
-      });
-
+      const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng');
       fullText += text + '\n';
       logger.info({ pageNum, textLength: text.length }, 'OCR completed for page');
     }
@@ -295,6 +328,17 @@ async function extractTextWithOCR(buffer: Buffer): Promise<string> {
   } catch (error) {
     logger.error({ error }, 'OCR extraction failed');
     throw error;
+  } finally {
+    // Cleanup
+    if (browser) {
+      await browser.close();
+    }
+    try {
+      await unlink(pdfPath);
+      await unlink(tempDir).catch(() => {});
+    } catch {
+      // Ignore cleanup errors
+    }
   }
 }
 
