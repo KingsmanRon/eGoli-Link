@@ -1,6 +1,13 @@
 import { useState, useEffect } from 'react';
-import { pdfApi, authApi } from '../../services/api';
-import type { PDFUpload, Location, JobPriority, User } from '../../types';
+import { pdfApi, usersApi } from '../../services/api';
+import type { PDFUpload, Location, JobPriority } from '../../types';
+
+interface Technician {
+  id: string;
+  name: string;
+  email: string;
+  activeJobs: number;
+}
 
 interface PDFDetailModalProps {
   pdf: PDFUpload;
@@ -14,7 +21,7 @@ export function PDFDetailModal({ pdf, onClose, onJobsCreated }: PDFDetailModalPr
   const [selectedLocations, setSelectedLocations] = useState<Set<string>>(new Set());
   const [creating, setCreating] = useState(false);
   const [priority, setPriority] = useState<JobPriority>('NORMAL');
-  const [technicians, setTechnicians] = useState<User[]>([]);
+  const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [selectedTechnician, setSelectedTechnician] = useState<string>('');
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -22,14 +29,16 @@ export function PDFDetailModal({ pdf, onClose, onJobsCreated }: PDFDetailModalPr
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch locations from this PDF
-        const result = await pdfApi.getLocations(pdf.id);
-        setLocations(result.locations as (Location & { jobCount?: number })[]);
+        // Fetch locations from this PDF and technicians in parallel
+        const [locationsResult, techniciansList] = await Promise.all([
+          pdfApi.getLocations(pdf.id),
+          usersApi.getTechnicians(),
+        ]);
 
-        // Fetch technicians for assignment (this would need an API endpoint)
-        // For now, we'll leave this empty and add it later
+        setLocations(locationsResult.locations as (Location & { jobCount?: number })[]);
+        setTechnicians(techniciansList);
       } catch (err) {
-        console.error('Failed to fetch PDF locations:', err);
+        console.error('Failed to fetch data:', err);
         setError('Failed to load locations');
       } finally {
         setLoading(false);
@@ -241,25 +250,31 @@ export function PDFDetailModal({ pdf, onClose, onJobsCreated }: PDFDetailModalPr
                   </div>
 
                   {/* Technician assignment (optional) */}
-                  {technicians.length > 0 && (
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">
-                        Assign to Technician (optional)
-                      </label>
-                      <select
-                        value={selectedTechnician}
-                        onChange={(e) => setSelectedTechnician(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-                      >
-                        <option value="">Leave unassigned</option>
-                        {technicians.map((tech) => (
-                          <option key={tech.id} value={tech.id}>
-                            {tech.name} ({tech.email})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Assign to Technician (optional)
+                    </label>
+                    <select
+                      value={selectedTechnician}
+                      onChange={(e) => setSelectedTechnician(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+                      disabled={technicians.length === 0}
+                    >
+                      <option value="">
+                        {technicians.length === 0 ? 'No technicians available' : 'Leave unassigned'}
+                      </option>
+                      {technicians.map((tech) => (
+                        <option key={tech.id} value={tech.id}>
+                          {tech.name} - {tech.activeJobs} active job{tech.activeJobs !== 1 ? 's' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    {technicians.length === 0 && (
+                      <p className="mt-1 text-xs text-gray-500">
+                        Create technician accounts in User Management to assign jobs
+                      </p>
+                    )}
+                  </div>
 
                   <p className="text-sm text-gray-500">
                     This will create {selectedLocations.size} job(s) from the selected locations.
