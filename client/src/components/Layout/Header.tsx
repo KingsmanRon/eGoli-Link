@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useOfflineSync } from '../../hooks/useOfflineSync';
+import { useAuth } from '../../hooks/useAuth';
 
 interface HeaderProps {
   title?: string;
@@ -10,6 +11,7 @@ interface HeaderProps {
 
 export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) {
   const { isOnline, isSyncing, pendingCount, sync } = useOfflineSync();
+  const { canUploadPDF, logout } = useAuth();
   const [showMenu, setShowMenu] = useState(false);
 
   return (
@@ -111,13 +113,15 @@ export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) 
             >
               Map View
             </Link>
-            <Link
-              to="/upload"
-              className="block px-4 py-2 hover:bg-gray-100"
-              onClick={() => setShowMenu(false)}
-            >
-              Upload PDF
-            </Link>
+            {canUploadPDF && (
+              <Link
+                to="/upload"
+                className="block px-4 py-2 hover:bg-gray-100"
+                onClick={() => setShowMenu(false)}
+              >
+                Upload PDF
+              </Link>
+            )}
             <hr className="my-2" />
             <Link
               to="/settings"
@@ -129,9 +133,8 @@ export function Header({ title = 'eGoli-Link', showBack, onBack }: HeaderProps) 
             <button
               className="block w-full text-left px-4 py-2 hover:bg-gray-100 text-red-600"
               onClick={() => {
-                localStorage.removeItem('accessToken');
-                localStorage.removeItem('refreshToken');
-                window.location.href = '/login';
+                setShowMenu(false);
+                logout();
               }}
             >
               Logout

@@ -10,6 +10,7 @@ import { MapView } from './components/Map/MapView';
 import { UploadZone } from './components/PDFUpload/UploadZone';
 import { getAccessToken, authApi } from './services/api';
 import { initDB } from './services/offlineStorage';
+import { AuthProvider, useAuth } from './hooks/useAuth';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -135,8 +136,14 @@ function MapPage() {
   );
 }
 
-// Upload Page
+// Upload Page (Admin/Supervisor only)
 function UploadPage() {
+  const { canUploadPDF } = useAuth();
+
+  if (!canUploadPDF) {
+    return <Navigate to="/" replace />;
+  }
+
   return (
     <div className="min-h-screen bg-gray-100 pb-20">
       <Header title="Upload PDF" />
@@ -190,49 +197,51 @@ function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/jobs"
-            element={
-              <ProtectedRoute>
-                <JobsPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/jobs/:id"
-            element={
-              <ProtectedRoute>
-                <JobDetailView />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/map"
-            element={
-              <ProtectedRoute>
-                <MapPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route
-            path="/upload"
-            element={
-              <ProtectedRoute>
-                <UploadPage />
-              </ProtectedRoute>
-            }
-          />
-        </Routes>
+        <AuthProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            <Route
+              path="/"
+              element={
+                <ProtectedRoute>
+                  <DashboardPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/jobs"
+              element={
+                <ProtectedRoute>
+                  <JobsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/jobs/:id"
+              element={
+                <ProtectedRoute>
+                  <JobDetailView />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/map"
+              element={
+                <ProtectedRoute>
+                  <MapPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/upload"
+              element={
+                <ProtectedRoute>
+                  <UploadPage />
+                </ProtectedRoute>
+              }
+            />
+          </Routes>
+        </AuthProvider>
       </BrowserRouter>
     </QueryClientProvider>
   );
